@@ -259,6 +259,13 @@ az identity federated-credential list \
 curl -s "${OIDC_ISSUER_URL}/.well-known/openid-configuration" | jq .
 ```
 
+## Related Documentation
+
+For more information about token management and authentication in HyperShift:
+
+- [Bound Token Authentication Setup](../authentication/bound-token-setup.md) - Configure bound service account tokens
+- [Bound Token Management Reference](../../reference/authentication/bound-token-management.md) - Comprehensive guide to bound token management
+
 ## Next Steps
 
 After setting up workload identities, you can proceed to:
