@@ -1,0 +1,244 @@
+# hostedcluster-generic.yaml - Generic HostedCluster with bound token signing
+#
+# This is a complete example of a HostedCluster configured with bound token signing
+# for a generic/on-premises deployment. Update the values as needed for your environment.
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+  labels:
+    hypershift.openshift.io/created-by: hypershift-operator
+    hypershift.openshift.io/hosted-cluster: my-cluster
+  annotations:
+    hypershift.openshift.io/oidc-provider: "true"
+    hypershift.openshift.io/bound-token-enabled: "true"
+spec:
+  # Platform configuration for generic/on-premises
+  platform:
+    type: None
+
+  # OIDC provider configuration with bound token signing
+  oidcProviders:
+  - issuerURL: https://oidc.example.com
+    serviceAccountSigningKey:
+      name: my-bound-token-signing-key
+
+  # Release image for the control plane
+  releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64
+
+  # Networking configuration
+  networking:
+    networkType: OVNKubernetes
+    clusterNetwork:
+      - cidr: 10.132.0.0/14
+        hostPrefix: 23
+    serviceNetwork:
+      - 172.31.0.0/16
+    machineNetwork:
+      - cidr: 192.168.100.0/24
+
+  # DNS configuration
+  dns:
+    baseDomain: example.com
+
+  # ETCD configuration
+  etcd:
+    managementType: Managed
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        storageClassName: gp3
+
+  # Control plane availability (for production, use HighAvailability)
+  controlPlaneAvailability: SingleReplica
+
+  # Infrastructure configuration
+  infrastructure:
+    platform:
+      type: None
+
+  # Pull secret configuration (optional)
+  # pullSecret:
+  #   name: my-pull-secret
+
+  # Additional configurations as needed
+  # scheduling:
+  #   available: true
+
+---
+# NodePool for the HostedCluster
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: my-cluster-worker
+  namespace: clusters
+  labels:
+    hypershift.openshift.io/created-by: hypershift-operator
+    hypershift.openshift.io/node-pool: my-cluster-worker
+spec:
+  clusterRef:
+    name: my-cluster
+    namespace: clusters
+
+  platform:
+    type: None
+
+  # Node configuration
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64
+
+  rootStorage:
+    type: PersistentVolume
+    persistentVolume:
+      size: 100Gi
+      storageClassName: gp3
+
+  # Node count and management
+  management:
+    autoRepair: false
+    upgradeType: RollingUpgrade
+
+  # Node configuration
+  config:
+    instances: 3
+
+  # Taints and tolerations (optional)
+  # taints:
+  #   - key: "node-role.kubernetes.io/worker"
+  #     effect: "NoSchedule"
+
+  # Labels for nodes (optional)
+  # labels:
+  #   node-role.kubernetes.io/worker: ""
+
+  # Security settings (optional)
+  # security:
+  #   encrypted: true
+
+---
+# ServiceAccount for bound token management (optional)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bound-token-manager
+  namespace: clusters
+  annotations:
+    hypershift.openshift.io/token-manager: "true"
+
+---
+# Role for bound token management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bound-token-manager
+  namespace: clusters
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["my-bound-token-signing-key"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["hypershift.openshift.io"]
+  resources: ["hostedclusters"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["hypershift.openshift.io"]
+  resources: ["hostedclusters/status"]
+  verbs: ["get"]
+
+---
+# RoleBinding for bound token management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bound-token-manager
+  namespace: clusters
+subjects:
+- kind: ServiceAccount
+  name: bound-token-manager
+  namespace: clusters
+roleRef:
+  kind: Role
+  name: bound-token-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap for OIDC discovery custom configuration (optional)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oidc-discovery-config
+  namespace: clusters
+  labels:
+    hypershift.openshift.io/oidc-config: "true"
+data:
+  # Custom OIDC discovery configuration
+  discovery.json: |
+    {
+      "issuer": "https://oidc.example.com",
+      "authorization_endpoint": "https://oidc.example.com/auth",
+      "token_endpoint": "https://oidc.example.com/token",
+      "jwks_uri": "https://api.example.com/openid/v1/jwks",
+      "response_types_supported": ["id_token"],
+      "subject_types_supported": ["public"],
+      "id_token_signing_alg_values_supported": ["RS256"],
+      "scopes_supported": ["openid", "email", "profile"]
+    }
+
+  # Custom claims configuration (optional)
+  claims.json: |
+    {
+      "default_audience": "openshift",
+      "token_lifetime": 3600,
+      "refresh_threshold": 0.8,
+      "allowed_audiences": ["openshift", "example.com"]
+    }
+
+---
+# Secret for the signing key (create this separately using key-generation.sh)
+# This is just a reference - the actual secret should be created separately
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: my-bound-token-signing-key
+#   namespace: clusters
+#   labels:
+#     hypershift.openshift.io/signing-key: "true"
+# type: Opaque
+# data:
+#   service-account-signing-key: <base64-encoded-private-key>
+#   service-account-signing-key-pub: <base64-encoded-public-key>
+
+---
+# Example monitoring ConfigMap (optional)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bound-token-monitoring
+  namespace: clusters
+  labels:
+    hypershift.openshift.io/monitoring: "true"
+data:
+  alerts.yml: |
+    groups:
+    - name: bound-tokens
+      rules:
+      - alert: BoundTokenSigningKeyMissing
+        expr: kube_secret_exists{namespace="clusters",secret="my-bound-token-signing-key"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Bound token signing key is missing"
+          description: "The bound token signing key secret 'my-bound-token-signing-key' is not found in namespace 'clusters'."
+
+      - alert: BoundTokenOIDCDiscoveryFailure
+        expr: probe_success{job="oidc-discovery"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OIDC discovery endpoint is failing"
+          description: "The OIDC discovery endpoint for bound tokens is not responding correctly."
